@@ -8,6 +8,7 @@ using ScriptCs.Contracts;
 using ScriptCs.Engine.Roslyn;
 using ScriptCs.Package;
 using ScriptCs.Package.InstallationProvider;
+using ScriptCs.Engine.FSharp;
 
 namespace ScriptCs
 {
@@ -58,11 +59,13 @@ namespace ScriptCs
             {
                 builder.RegisterType<DebugScriptExecutor>().As<IScriptExecutor>();
                 builder.RegisterType<RoslynScriptDebuggerEngine>().As<IScriptEngine>();
+                builder.RegisterType<FSharpScriptEngine>().As<IScriptEngine>();
             }
             else
             {
                 builder.RegisterType<ScriptExecutor>().As<IScriptExecutor>();
                 builder.RegisterType<RoslynScriptEngine>().As<IScriptEngine>();
+                builder.RegisterType<FSharpScriptEngine>().As<IScriptEngine>();
             }
 
             builder.RegisterType<ScriptServiceRoot>().As<ScriptServiceRoot>();

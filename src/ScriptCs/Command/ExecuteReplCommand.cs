@@ -56,7 +56,7 @@ namespace ScriptCs.Command
             catch (Exception ex)
             {
                 _logger.Error(ex.Message);
-                return CommandResult.Error;              
+                return CommandResult.Error;
             }
             repl.Terminate();
             return CommandResult.Success;
