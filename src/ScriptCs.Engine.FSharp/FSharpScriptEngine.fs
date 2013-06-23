@@ -67,7 +67,6 @@ type FSharpEngine(host:ScriptHost) =
            if res = String.empty || res = "\r\n" || res = "> " then
               Async.Sleep(25) |> Async.RunSynchronously
               wait()
-           else ()
         x.AddReference(ref)
         wait()
 
@@ -80,13 +79,12 @@ type FSharpEngine(host:ScriptHost) =
            if res = String.empty then
               Async.Sleep(25) |> Async.RunSynchronously
               wait()
-           else ()
        x.ImportNamespace(namespace')
        wait()
 
     interface IDisposable with
-       member x.Dispose() = ()
-          //(stdinStream >>= stdin >>= stdoutStream >>= stdout >>= stderrStream >>= stderr).Dispose()          
+       member x.Dispose() =
+          (stdinStream >>= stdin >>= stdoutStream >>= stdout >>= stderrStream >>= stderr).Dispose()          
                       
 type  FSharpScriptEngine( scriptHostFactory:IScriptHostFactory, logger: ILog) =
     let mutable baseDir = String.empty
