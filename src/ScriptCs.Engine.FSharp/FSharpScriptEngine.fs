@@ -116,17 +116,16 @@ type  FSharpScriptEngine( scriptHostFactory:IScriptHostFactory, logger: ILog) =
                                let newReferences = match sessionState.References with
                                                    | null -> distinctReferences
                                                    | s when Seq.isEmpty s -> distinctReferences
-                                                   | s ->  distinctReferences.Except(s)
+                                                   | s ->  distinctReferences.Except s
                                newReferences |> Seq.iter (fun r -> logger.DebugFormat("Adding reference to {0}", r)
                                                                    sessionState.Session.AddReference r ) 
                                sessionState      
 
             match sessionState.Session.Execute(code) with
             | Success result -> let cleaned = 
-                                    let splits = result.Split([|"\r"; "\n";|], StringSplitOptions.RemoveEmptyEntries)
-                                    let filtered = splits |> Array.filter (fun str -> not(str = "> "))
-                                    let final = filtered |> String.concat "\r\n"
-                                    final
+                                   result.Split([|"\r"; "\n";|], StringSplitOptions.RemoveEmptyEntries)
+                                   |> Array.filter (fun str -> not(str = "> "))
+                                   |> String.concat "\r\n"
                                 ScriptResult(ReturnValue = cleaned)
             | Error e -> ScriptResult(CompileException = exn e )
             | Incomplete -> ScriptResult()
