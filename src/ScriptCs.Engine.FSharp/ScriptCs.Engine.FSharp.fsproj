@@ -58,10 +58,10 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="FSharp.Compiler">
-      <HintPath>..\..\..\fsharp\lib\release\4.0\FSharp.Compiler.dll</HintPath>
+      <HintPath>Z:\dave\code\fs-ev\lib\release\4.0\FSharp.Compiler.dll</HintPath>
     </Reference>
     <Reference Include="fsiAnyCpu">
-      <HintPath>..\..\..\fsharp\lib\release\4.0\fsiAnyCpu.exe</HintPath>
+      <HintPath>Z:\dave\code\fs-ev\lib\release\4.0\fsiAnyCpu.exe</HintPath>
     </Reference>
     <Reference Include="mscorlib" />
     <Reference Include="FSharp.Core, Version=4.3.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />

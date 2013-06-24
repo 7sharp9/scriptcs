@@ -11,121 +11,98 @@ open System.Linq
 type Result = Success of String | Error of string | Incomplete
 
 type FSharpEngine(host:ScriptHost) = 
-    let oin = Console.OpenStandardInput()
-    let oout = Console.OpenStandardOutput()
-    let oerr = Console.OpenStandardError()
-     
-    let stdinStream = new CompilerInputStream()
-    let stdin = new StreamReader(stdinStream)
+   let stdin = new StreamReader(System.IO.Stream.Null)
  
-    let stdoutStream = new CompilerOutputStream()
-    let stdout = StreamWriter.Synchronized(new StreamWriter(stdoutStream, AutoFlush=true))
+   let stdoutStream = new CompilerOutputStream()
+   let stdout = StreamWriter.Synchronized(new StreamWriter(stdoutStream, AutoFlush=true))
  
-    let stderrStream = new CompilerOutputStream()
-    let stderr = StreamWriter.Synchronized(new StreamWriter(stderrStream, AutoFlush=true))
-     
-    let getOutput (stream:CompilerInputStream) code = 
+   let stderrStream = new CompilerOutputStream()
+   let stderr = StreamWriter.Synchronized(new StreamWriter(stderrStream, AutoFlush=true))
+    
+   let getOutput (session: FsiEvaluationSession) code = 
 
-        let rec tryget() = 
-            async{ do! Async.Sleep(100)
+      let tryget() = 
+         let error = stderrStream.Read()
+         if error.Length > 0 then Error(error) else
 
-                   let error = stderrStream.Read()
-                   if error.Length > 0 then return Error(error) else
+         Success(stdoutStream.Read())
 
-                   let result = stdoutStream.Read()
-                   
-                   if result |> String.isNullOrEmpty then return! tryget()
-                   else return Success result }
+      session.EvalInteraction(code)
+      if code.EndsWith ";;" then tryget() 
+      else Incomplete
+       
+   let commonOptions = [| "fsi.exe"; "--nologo"; "--readline-";|]
+   let session = FsiEvaluationSession(commonOptions, stdin, stdout, stderr)
 
-        stream.Add(code + "\n")
-        if code.EndsWith ";;" then tryget() 
-        else async.Return Incomplete
-        
-    let commonOptions = [| "fsi.exe"; "--nologo"; "--readline-";|]
-    let session = FsiEvaluationSession(commonOptions, stdin, stdout, stderr)
+   // Start the session in the background
+   //do Async.Start <| async {session.Run()}
+   //do session.Interrupt()
+   //do stdoutStream.Read() |> ignore
 
-    // Start the session in the background
-    do Async.Start <| async {session.Run()}
-    do session.Interrupt()
-    do stdoutStream.Read() |> ignore
+   let (>>=) (d1:#IDisposable) (d2:#IDisposable) = 
+      {new IDisposable with member x.Dispose() = d1.Dispose(); d2.Dispose()}
 
-    let (>>=) (d1:#IDisposable) (d2:#IDisposable) = 
-        {new IDisposable with member x.Dispose() = d1.Dispose(); d2.Dispose()}
+   member x.Execute(code) = 
+      getOutput session code
 
-    member x.Require<'a>() = host.Require()
+   member x.AddReference(ref) =
+      session.EvalInteraction(sprintf "#r @\"%s\"" ref)
 
-    member x.Execute(code, ?timeout) = 
-       let timeout = defaultArg timeout 10000
-       Async.RunSynchronously((getOutput stdinStream code), timeout)
+   member x.SilentAddReference(ref) = 
+      x.AddReference(ref)
+      stdoutStream.Read() |> ignore
 
-    member x.AddReference(ref) =
-        stdinStream.Add( sprintf "#r @\"%s\";;\n" ref)
+   member x.ImportNamespace(namespace') =
+      session.EvalInteraction(sprintf "open %s" namespace')
 
-    member x.SilentAddReference(ref) = 
-        let rec wait() = 
-           let res = stdoutStream.Read()
-           if res = String.empty || res = "\r\n" || res = "> " then
-              Async.Sleep(25) |> Async.RunSynchronously
-              wait()
-        x.AddReference(ref)
-        wait()
+   member x.SilentImportNamespace(namespace') =
+      x.ImportNamespace(namespace')
+      stdoutStream.Read() |> ignore
 
-    member x.ImportNamespace(namespace') =
-        stdinStream.Add(sprintf "open %s;;\n" namespace')
-
-    member x.SilentImportNamespace(namespace') =
-       let rec wait() = 
-           let res = stdoutStream.Read()
-           if res = String.empty then
-              Async.Sleep(25) |> Async.RunSynchronously
-              wait()
-       x.ImportNamespace(namespace')
-       wait()
-
-    interface IDisposable with
-       member x.Dispose() =
-          (stdinStream >>= stdin >>= stdoutStream >>= stdout >>= stderrStream >>= stderr).Dispose()          
+   interface IDisposable with
+      member x.Dispose() =
+         (stdin >>= stdoutStream >>= stdout >>= stderrStream >>= stderr).Dispose()          
                       
 type  FSharpScriptEngine( scriptHostFactory:IScriptHostFactory, logger: ILog) =
-    let mutable baseDir = String.empty
-    let [<Literal>]sessionKey = "F# Session"
+   let mutable baseDir = String.empty
+   let [<Literal>]sessionKey = "F# Session"
    
-    interface IScriptEngine with
-        member x.BaseDirectory with get() = baseDir and  set value = baseDir <- value
-        member x.Execute(code: String, scriptArgs, references, namespaces, scriptPackSession) =
-            let distinctReferences = references.Union(scriptPackSession.References).Distinct()
-            let sessionState = 
-                match scriptPackSession.State.TryGetValue sessionKey with
-                | false, _ -> let host = scriptHostFactory.CreateScriptHost(ScriptPackManager(scriptPackSession.Contexts), scriptArgs)
-                              logger.Debug("Creating session")
-                              let session = new FSharpEngine(host)
-                     
-                              distinctReferences |> Seq.iter (fun r -> logger.DebugFormat("Adding reference to {0}", r)
-                                                                       session.SilentAddReference r )
-                     
-                              namespaces.Union(scriptPackSession.Namespaces).Distinct() 
-                              |> Seq.iter (fun ns -> logger.DebugFormat("Importing namespace {0}", ns)
-                                                     session.SilentImportNamespace ns)
-                     
-                              let sessionState = SessionState<_>(References = distinctReferences, Session = session)
-                              scriptPackSession.State.Add(sessionKey, sessionState)
-                              sessionState 
-                | true, res -> logger.Debug("Reusing existing session") 
-                               let sessionState = res :?> SessionState<FSharpEngine>
-                               
-                               let newReferences = match sessionState.References with
-                                                   | null -> distinctReferences
-                                                   | s when Seq.isEmpty s -> distinctReferences
-                                                   | s ->  distinctReferences.Except s
-                               newReferences |> Seq.iter (fun r -> logger.DebugFormat("Adding reference to {0}", r)
-                                                                   sessionState.Session.AddReference r ) 
-                               sessionState      
+   interface IScriptEngine with
+      member x.BaseDirectory with get() = baseDir and set value = baseDir <- value
+      member x.Execute(code, args, references, namespaces, scriptPackSession) =
+         let distinctReferences = references.Union(scriptPackSession.References).Distinct()
+         let sessionState = 
+            match scriptPackSession.State.TryGetValue sessionKey with
+            | false, _ -> let host = scriptHostFactory.CreateScriptHost(ScriptPackManager(scriptPackSession.Contexts), args)
+                          logger.Debug("Creating session")
+                          let session = new FSharpEngine(host)
+                 
+                          distinctReferences |> Seq.iter (fun ref -> logger.DebugFormat("Adding reference to {0}", ref)
+                                                                     session.SilentAddReference ref )
+                 
+                          namespaces.Union(scriptPackSession.Namespaces).Distinct() 
+                          |> Seq.iter (fun ns -> logger.DebugFormat("Importing namespace {0}", ns)
+                                                 session.SilentImportNamespace ns)
+                 
+                          let sessionState = SessionState<_>(References = distinctReferences, Session = session)
+                          scriptPackSession.State.Add(sessionKey, sessionState)
+                          sessionState 
+            | true, res -> logger.Debug("Reusing existing session") 
+                           let sessionState = res :?> SessionState<FSharpEngine>
+                           
+                           let newReferences = match sessionState.References with
+                                               | null -> distinctReferences
+                                               | refs when Seq.isEmpty refs -> distinctReferences
+                                               | refs ->  distinctReferences.Except refs
+                           newReferences |> Seq.iter (fun ref -> logger.DebugFormat("Adding reference to {0}", ref)
+                                                                 sessionState.Session.AddReference ref ) 
+                           sessionState      
 
-            match sessionState.Session.Execute(code) with
-            | Success result -> let cleaned = 
-                                   result.Split([|"\r"; "\n";|], StringSplitOptions.RemoveEmptyEntries)
-                                   |> Array.filter (fun str -> not(str = "> "))
-                                   |> String.concat "\r\n"
-                                ScriptResult(ReturnValue = cleaned)
-            | Error e -> ScriptResult(CompileException = exn e )
-            | Incomplete -> ScriptResult()
+         match sessionState.Session.Execute(code) with
+         | Success result -> let cleaned = 
+                                result.Split([|"\r"; "\n";|], StringSplitOptions.RemoveEmptyEntries)
+                                |> Array.filter (fun str -> not(str = "> "))
+                                |> String.concat "\r\n"
+                             ScriptResult(ReturnValue = cleaned)
+         | Error e -> ScriptResult(CompileException = exn e )
+         | Incomplete -> ScriptResult()
