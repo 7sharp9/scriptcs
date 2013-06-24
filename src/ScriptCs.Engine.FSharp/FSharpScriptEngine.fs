@@ -35,11 +35,6 @@ type FSharpEngine(host:ScriptHost) =
    let commonOptions = [| "fsi.exe"; "--nologo"; "--readline-";|]
    let session = FsiEvaluationSession(commonOptions, stdin, stdout, stderr)
 
-   // Start the session in the background
-   //do Async.Start <| async {session.Run()}
-   //do session.Interrupt()
-   //do stdoutStream.Read() |> ignore
-
    let (>>=) (d1:#IDisposable) (d2:#IDisposable) = 
       {new IDisposable with member x.Dispose() = d1.Dispose(); d2.Dispose()}
 
