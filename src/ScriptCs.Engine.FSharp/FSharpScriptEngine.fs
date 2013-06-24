@@ -24,12 +24,13 @@ type FSharpEngine(host:ScriptHost) =
       let tryget() = 
          let error = stderrStream.Read()
          if error.Length > 0 then Error(error) else
-
          Success(stdoutStream.Read())
 
-      session.EvalInteraction(code)
-      if code.EndsWith ";;" then tryget() 
-      else Incomplete
+      try session.EvalInteraction(code)
+          if code.EndsWith ";;" then tryget() 
+          else Incomplete
+      with ex -> Error ex.Message
+     
        
    let commonOptions = [| "fsi.exe"; "--nologo"; "--readline-";|]
    let session = FsiEvaluationSession(commonOptions, stdin, stdout, stderr)
